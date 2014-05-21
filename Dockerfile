@@ -15,5 +15,8 @@
 # You should have received a copy of the Affero GNU General Public License
 # along with Crypton CLI.  If not, see <http://www.gnu.org/licenses/>.
 
-# i accidentally overwrote this before i committed -_-
-# it will be easy to replace but i'll do so this weekend
+from dockerfile/nodejs
+run npm install -g crypton-server
+expose 1025
+entrypoint [ "crypton-server" ]
+cmd [ "--help" ]

@@ -31,35 +31,92 @@ program.command('temp')
   .description('Run a one-off instance of a Crypton backend')
   .action(run);
 
+var containers = {};
+
 function run () {
-  // TODO check for docker
-  // TODO check for spideroak/crypton image
+  console.log('Starting Postgres container...');
 
-  console.log('Starting Docker container...');
+  var streams = [
+    process.stdout,
+    process.stderr
+  ];
 
-  docker.run('crypton', ['start'], [ process.stdout, process.stderr ], function (err, data, rawContainer) {
-    if (err) {
-      console.log(err);
-      process.exit();
-    }
+  docker.run('paintedfox/postgresql', [ '/sbin/my_init' ], streams, {
+    Tty: false,
+    name: 'postgres'
+  }, function (err, data, rawContainer) {
+    handleError(err);
+  }).on('container', function (container) {
+    console.log('Postgres started');
+    containers.postgres = docker.getContainer(container.id);
 
-    container = docker.getContainer(rawContainer.id);
-    attach();
+    setTimeout(function () {
+      console.log('Starting Redis container...');
+
+      docker.run('dockerfile/redis', [ 'redis-server', '/etc/redis/redis.conf' ], streams, {
+        name: 'redis'
+      }, function (err, data, rawContainer) {
+        handleError(err);
+      }).on('container', function (container) {
+        console.log('Redis started');
+        containers.redis = docker.getContainer(container.id);
+
+        setTimeout(function () {
+          console.log('Starting Crypton container...');
+          docker.run('crypton', [ 'run', '-d' ], streams, {
+            HostConfig: {
+              Links: [
+                'postgres:db',
+                'redis:redis'
+              ]
+            }
+          }, function (err, data, rawContainer) {
+            handleError(err);
+            shutdown();
+          }).on('container', function (container) {
+            containers.node = docker.getContainer(container.id);
+            attach();
+          });
+        }, 5000); // give redis some time to start
+
+      });
+
+    }, 3000); // give postgres some time to start
   });
 }
 
+function handleError (err) {
+  if (err) {
+    console.log(err);
+    shutdown();
+  }
+}
+
 function attach () {
+console.log(containers);
   process.stdin.resume();
   process.on('SIGINT', shutdown);
   process.stdin.on('end', shutdown);
 }
 
 function shutdown () {
-  console.log('Stopping container...');
-  container.stop(function () {
-    console.log('Removing container...');
-    container.remove(function () {
-      process.exit();
+  console.log('Stopping Crypton container...');
+  containers.node.stop(function () {
+    console.log('Removing Crypton container...');
+    containers.node.remove(function () {
+      console.log('Stopping Redis container...');
+      containers.redis.stop(function () {
+        console.log('Removing Redis container...');
+        containers.redis.remove(function () {
+          console.log('Stopping Postgres container...');
+          containers.postgres.stop(function () {
+            console.log('Removing Postgres container...');
+            containers.postgres.remove(function () {
+              process.exit();
+            });
+          });
+        });
+      });
     });
   });
 }
