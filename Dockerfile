@@ -16,7 +16,17 @@
 # along with Crypton CLI.  If not, see <http://www.gnu.org/licenses/>.
 
 from dockerfile/nodejs
+
+# grab the crypton server code
 run npm install -g crypton-server
+
+# install supervisord
+run apt-get install -y supervisor
+run mkdir -p /var/log/supervisor
+
+# configure supervisord
+add supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+run useradd crypton
 expose 1025
-entrypoint [ "crypton-server" ]
-cmd [ "--help" ]
+cmd [ "/usr/bin/supervisord" ]
